@@ -8,15 +8,15 @@ class KuralNNModel(KuralModel):
 		super(KuralNNModel, self).__init__(vocab_size, embedding_dim)
 
 		if hidden_layers_dims is None:
-			hidden_layers_dims = [5, 5, 5]
+			hidden_layers_dims = [5, 5, 5, 1]  # Include output dimension of 1
 
 		layers = []
 		input_dim = embedding_dim
 		for i, dims in enumerate(hidden_layers_dims):
 			layers.append(nn.Linear(input_dim, dims))
 			# Don't add ReLU after the final linear layer
-			# if i < len(hidden_layers_dims) - 1:
-			# 	layers.append(nn.ReLU())
+			if i < len(hidden_layers_dims) - 1:
+				layers.append(nn.ReLU())
 			input_dim = dims
 
 		self.hidden_layers = nn.Sequential(*layers)
