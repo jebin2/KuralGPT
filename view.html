@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Embeddings Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        
+        .container {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            height: 70vh;
+        }
+        
+        #visualization {
+            flex: 3;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        #side-panel {
+            flex: 1;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        
+        .controls {
+            margin-top: 20px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 80px;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            resize: none;
+            font-family: inherit;
+            margin-bottom: 10px;
+        }
+        
+        button {
+            padding: 8px 15px;
+            background: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #3367d6;
+        }
+        
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            pointer-events: none;
+            display: none;
+        }
+        
+        circle {
+            transition: r 0.2s ease;
+        }
+        
+        circle.highlighted {
+            stroke: #ff4500;
+            stroke-width: 2px;
+        }
+        
+        .no-data {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+        }
+        
+        .word-info {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .word-info h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .word-info p {
+            margin: 5px 0;
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .zoom-btn:hover {
+            background: #f0f0f0;
+        }
+        
+        #reset-btn {
+            margin-top: 10px;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Word Embeddings Visualization</h1>
+    
+    <div class="container">
+        <div id="visualization">
+            <div class="loading">Loading visualization...</div>
+            <div class="zoom-controls">
+                <div class="zoom-btn" id="zoom-in">+</div>
+                <div class="zoom-btn" id="zoom-out">-</div>
+                <button id="reset-btn">Reset</button>
+            </div>
+            <div class="tooltip"></div>
+        </div>
+        
+        <div id="side-panel">
+            <div class="no-data">Click on a data point to see details</div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <h3>Search Words</h3>
+        <textarea id="search-text" placeholder="Enter text to find matching words in the visualization..."></textarea>
+        <button id="search-btn">Highlight Matches</button>
+        <button id="clear-btn">Clear Highlights</button>
+    </div>
+    
+    <script>
+        // Configuration
+        const width = document.getElementById('visualization').clientWidth;
+        const height = document.getElementById('visualization').clientHeight;
+        const margin = { top: 40, right: 40, bottom: 40, left: 40 };
+        
+        // Create SVG
+        const svg = d3.select('#visualization')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height);
+            
+        // Create a group for the chart content with margins
+        const chart = svg.append('g')
+            .attr('transform', `translate(${margin.left}, ${margin.top})`);
+            
+        // Create a clip path to ensure points don't render outside chart area
+        svg.append('defs').append('clipPath')
+            .attr('id', 'clip')
+            .append('rect')
+            .attr('width', width - margin.left - margin.right)
+            .attr('height', height - margin.top - margin.bottom);
+            
+        // Group for data points that will be clipped
+        const dots = chart.append('g')
+            .attr('clip-path', 'url(#clip)')
+            .attr('class', 'dots');
+            
+        // Create tooltip
+        const tooltip = d3.select('.tooltip');
+        
+        // Set up zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.5, 20])
+            .on('zoom', zoomed);
+            
+        svg.call(zoom);
+        
+        // Variables for the data and scales
+        let wordData = [];
+        let xScale, yScale;
+        let currentTransform = d3.zoomIdentity;
+        
+        // Function to load and process data
+        async function loadData() {
+            try {
+                // This is a placeholder - in a real scenario, you'd fetch from the actual file
+                // For this demo, we'll create some sample data
+                const sampleData = [];
+                const words = ["the", "of", "and", "a", "to", "in", "is", "you", "that", "it", 
+                               "he", "was", "for", "on", "are", "as", "with", "his", "they", "I",
+                               "at", "be", "this", "have", "from", "or", "one", "had", "by", "word",
+                               "but", "not", "what", "all", "were", "we", "when", "your", "can", "said",
+                               "there", "use", "an", "each", "which", "she", "do", "how", "their", "if"];
+                
+                // Generate random 2D coordinates for each word
+                for (let i = 0; i < words.length; i++) {
+                    sampleData.push({
+                        name: words[i],
+                        x: Math.random() * 10 - 5,
+                        y: Math.random() * 10 - 5
+                    });
+                }
+                
+                // In a real scenario, you'd use:
+                const response = await fetch('word_embeddings.json');
+                const data = await response.json();
+                
+                return data;
+            } catch (error) {
+                console.error("Error loading data:", error);
+                document.querySelector('.loading').textContent = "Error loading data";
+                return [];
+            }
+        }
+        
+        // Initialize the visualization
+        async function initVisualization() {
+            wordData = await loadData();
+            
+            if (wordData.length === 0) {
+                document.querySelector('.loading').textContent = "No data available";
+                return;
+            }
+            
+            document.querySelector('.loading').style.display = 'none';
+            
+            // Set up scales
+            const xExtent = d3.extent(wordData, d => d.x);
+            const yExtent = d3.extent(wordData, d => d.y);
+            
+            // Add some padding to the extents
+            const xPadding = (xExtent[1] - xExtent[0]) * 0.1;
+            const yPadding = (yExtent[1] - yExtent[0]) * 0.1;
+            
+            xScale = d3.scaleLinear()
+                .domain([xExtent[0] - xPadding, xExtent[1] + xPadding])
+                .range([0, width - margin.left - margin.right]);
+                
+            yScale = d3.scaleLinear()
+                .domain([yExtent[0] - yPadding, yExtent[1] + yPadding])
+                .range([height - margin.top - margin.bottom, 0]);
+                
+            // Add axes
+            const xAxis = chart.append('g')
+                .attr('class', 'x-axis')
+                .attr('transform', `translate(0, ${height - margin.top - margin.bottom})`)
+                .call(d3.axisBottom(xScale));
+                
+            const yAxis = chart.append('g')
+                .attr('class', 'y-axis')
+                .call(d3.axisLeft(yScale));
+                
+            // Draw data points
+            updateVisualization();
+            
+            // Set up event listeners
+            document.getElementById('search-btn').addEventListener('click', searchWords);
+            document.getElementById('clear-btn').addEventListener('click', clearHighlights);
+            document.getElementById('zoom-in').addEventListener('click', () => zoomByButton(1.5));
+            document.getElementById('zoom-out').addEventListener('click', () => zoomByButton(0.75));
+            document.getElementById('reset-btn').addEventListener('click', resetZoom);
+            
+            // Allow pressing Enter in the textarea to trigger search
+            document.getElementById('search-text').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    searchWords();
+                }
+            });
+        }
+        
+        // Update the visualization with current data and scales
+        function updateVisualization() {
+            // Update the points
+            const points = dots.selectAll('circle')
+                .data(wordData);
+                
+            // Remove old points
+            points.exit().remove();
+            
+            // Add new points
+            const newPoints = points.enter()
+                .append('circle')
+                .attr('cx', d => xScale(d.x))
+                .attr('cy', d => yScale(d.y))
+                .attr('r', 5)
+                .attr('fill', 'steelblue')
+                .attr('opacity', 0.7);
+                
+            // Update all points
+            dots.selectAll('circle')
+                .attr('cx', d => xScale(d.x))
+                .attr('cy', d => yScale(d.y))
+                .on('mouseover', function(event, d) {
+                    d3.select(this)
+                        .attr('r', 8)
+                        .attr('opacity', 1);
+                        
+                    tooltip
+                        .style('display', 'block')
+                        .style('left', `${event.pageX + 10}px`)
+                        .style('top', `${event.pageY - 25}px`)
+                        .text(d.word);
+                })
+                .on('mouseout', function() {
+                    d3.select(this)
+                        .attr('r', 5)
+                        .attr('opacity', 0.7);
+                        
+                    tooltip.style('display', 'none');
+                })
+                .on('click', function(event, d) {
+                    showWordDetails(d);
+                    
+                    // Highlight the selected word
+                    dots.selectAll('circle').classed('clicked', false);
+                    d3.select(this).classed('clicked', true);
+                });
+        }
+        
+        // Function to handle zoom events
+        function zoomed(event) {
+            currentTransform = event.transform;
+            
+            // Update the position of all elements
+            const newXScale = event.transform.rescaleX(xScale);
+            const newYScale = event.transform.rescaleY(yScale);
+            
+            // Update axes
+            chart.select('.x-axis').call(d3.axisBottom(newXScale));
+            chart.select('.y-axis').call(d3.axisLeft(newYScale));
+            
+            // Update circles
+            dots.selectAll('circle')
+                .attr('cx', d => event.transform.applyX(xScale(d.x)))
+                .attr('cy', d => event.transform.applyY(yScale(d.y)));
+        }
+        
+        // Function to handle button-based zooming
+        function zoomByButton(scaleFactor) {
+            const center = [width / 2, height / 2];
+            
+            svg.transition()
+                .duration(300)
+                .call(
+                    zoom.transform,
+                    currentTransform.translate(
+                        center[0] - scaleFactor * (center[0] - currentTransform.x) / currentTransform.k,
+                        center[1] - scaleFactor * (center[1] - currentTransform.y) / currentTransform.k
+                    ).scale(currentTransform.k * scaleFactor)
+                );
+        }
+        
+        // Function to reset zoom to initial state
+        function resetZoom() {
+            svg.transition()
+                .duration(500)
+                .call(zoom.transform, d3.zoomIdentity);
+        }
+        
+        // Function to show word details in the side panel
+        function showWordDetails(word) {
+            const sidePanel = document.getElementById('side-panel');
+            
+            // Clear previous content
+            sidePanel.innerHTML = '';
+            
+            // Create info container
+            const wordInfo = document.createElement('div');
+            wordInfo.className = 'word-info';
+            
+            // Add word as header
+            const header = document.createElement('h3');
+            header.textContent = word.word;
+            wordInfo.appendChild(header);
+            
+            // Add coordinates
+            const coords = document.createElement('p');
+            coords.innerHTML = `<strong>Coordinates:</strong><br>X: ${word.x.toFixed(4)}<br>Y: ${word.y.toFixed(4)}`;
+            wordInfo.appendChild(coords);
+            
+            // Add some additional info that would typically come from the embeddings
+            const similarHeader = document.createElement('h4');
+            similarHeader.textContent = 'Similar Words';
+            wordInfo.appendChild(similarHeader);
+            
+            // Find 5 closest words (simple Euclidean distance)
+            const similarities = wordData
+                .filter(w => w.word !== word.word)
+                .map(w => {
+                    const distance = Math.sqrt(
+                        Math.pow(w.x - word.x, 2) + 
+                        Math.pow(w.y - word.y, 2)
+                    );
+                    return { word: w.word, distance };
+                })
+                .sort((a, b) => a.distance - b.distance)
+                .slice(0, 5);
+            
+            const similarList = document.createElement('ul');
+            similarities.forEach(sim => {
+                const li = document.createElement('li');
+                li.textContent = `${sim.word} (distance: ${sim.distance.toFixed(4)})`;
+                similarList.appendChild(li);
+            });
+            
+            wordInfo.appendChild(similarList);
+            sidePanel.appendChild(wordInfo);
+        }
+        
+        // Function to search and highlight words
+        function searchWords() {
+            const searchText = document.getElementById('search-text').value.trim().toLowerCase();
+            
+            if (!searchText) {
+                clearHighlights();
+                return;
+            }
+            
+            // First clear any existing highlights
+            clearHighlights();
+            
+            // Find matching words
+            const words = searchText.split(/\s+/);
+            const matchedDots = new Set();
+            
+            words.forEach(word => {
+                if (word.length > 0) {
+                    wordData.forEach((d, i) => {
+                        if (d.word.toLowerCase().includes(word)) {
+                            matchedDots.add(i);
+                        }
+                    });
+                }
+            });
+            
+            // Highlight matched dots
+            dots.selectAll('circle')
+                .attr('fill', (d, i) => matchedDots.has(i) ? '#ff4500' : 'steelblue')
+                .attr('r', (d, i) => matchedDots.has(i) ? 8 : 5)
+                .attr('opacity', (d, i) => matchedDots.has(i) ? 1 : 0.7)
+                .classed('highlighted', (d, i) => matchedDots.has(i));
+                
+            // If we found matches, inform the user
+            if (matchedDots.size > 0) {
+                const sidePanel = document.getElementById('side-panel');
+                sidePanel.innerHTML = `
+                    <div class="word-info">
+                        <h3>Search Results</h3>
+                        <p>Found ${matchedDots.size} matching words for "${searchText}"</p>
+                        <p>They are highlighted in orange in the visualization.</p>
+                    </div>
+                `;
+            } else {
+                const sidePanel = document.getElementById('side-panel');
+                sidePanel.innerHTML = `
+                    <div class="word-info">
+                        <h3>Search Results</h3>
+                        <p>No matches found for "${searchText}"</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Function to clear highlights
+        function clearHighlights() {
+            dots.selectAll('circle')
+                .attr('fill', 'steelblue')
+                .attr('r', 5)
+                .attr('opacity', 0.7)
+                .classed('highlighted', false);
+                
+            // Reset the side panel if there's no clicked point
+            if (!dots.select('circle.clicked').empty()) {
+                const clickedData = d3.select('circle.clicked').datum();
+                showWordDetails(clickedData);
+            } else {
+                document.getElementById('side-panel').innerHTML = '<div class="no-data">Click on a data point to see details</div>';
+            }
+        }
+        
+        // Initialize the visualization when the page loads
+        window.addEventListener('load', initVisualization);
+    </script>
+</body>
+</html>
