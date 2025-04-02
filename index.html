@@ -240,7 +240,7 @@
                 }
                 
                 // In a real scenario, you'd use:
-                let url = window.location.host == "jebin2.github.io" ? "" : "word_embeddings.json"
+                let url = window.location.host == "jebin2.github.io" ? "https://github.com/jebin2/KuralGPT/blob/43b8631024e853a192bcbc83393c1512794e8c11/word_embeddings.json" : "word_embeddings.json"
                 const response = await fetch(url);
                 const data = await response.json();
                 
