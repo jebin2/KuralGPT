@@ -8,7 +8,7 @@ class KuralNNModel(KuralModel):
 		super(KuralNNModel, self).__init__(vocab_size, embedding_dim)
 
 		if hidden_layers_dims is None:
-			hidden_layers_dims = [5, 5, 5, 1]  # Include output dimension of 1
+			hidden_layers_dims = [128, 64, 32, 1]  # Include output dimension of 1
 
 		layers = []
 		input_dim = embedding_dim

@@ -77,7 +77,7 @@ def process(type="KuralModel"):
 	if type == "KuralModel":
 		model = KuralModel(vocab_size, embedding_dim=100)
 	else:
-		model = KuralNNModel(vocab_size, embedding_dim=100)
+		model = KuralNNModel(vocab_size, embedding_dim=2000)
 
 	train_model(model, kural_data_loader, vocab_size, num_epochs=10, learning_rate=0.01)
 
@@ -87,5 +87,5 @@ def process(type="KuralModel"):
 	return model
 
 if __name__ == "__main__":
-	process("KuralModel")
-	# process("KuralNNModel")
+	# process("KuralModel")
+	process("KuralNNModel")
